@@ -1,5 +1,5 @@
-import { Client, Message, EmbedBuilder, TextChannel } from 'discord.js';
-import { pool } from '../discord.service'; 
+import { Client, Message, EmbedBuilder, TextChannel, PermissionsBitField } from 'discord.js';
+import { pool } from '../discord.service';
 
 const userVoiceState = new Map<string, string | null>();
 
@@ -10,7 +10,6 @@ export function setupVoiceLogs(client: Client) {
 
     try {
       if (!oldState.channel && newState.channel) {
-        // Salva o log no banco de dados
         await pool.query(
           'INSERT INTO voice_logs (user_id, timestamp, event, channel_id) VALUES ($1, $2, $3, $4)',
           [userId, timestamp, 'entrou', newState.channel.id],
@@ -41,10 +40,14 @@ export function setupVoiceLogs(client: Client) {
 
 export async function handleVoiceLogsCommand(message: Message) {
   const args = message.content.split(' ').slice(1);
-  const userId = args[0]?.replace(/[<@!>]/g, '');
+  let userId = args[0]?.replace(/[<@!>]/g, '');
+
+  if (!message.member || !message.member.permissions.has(PermissionsBitField.Flags.ManageGuild)) {
+    return;
+  }
 
   if (!userId) {
-    return message.reply('Por favor, mencione um usuário ou forneça o ID.');
+    userId = message.author.id; 
   }
 
   try {
@@ -99,6 +102,5 @@ export async function handleVoiceLogsCommand(message: Message) {
     }
   } catch (error) {
     console.error('Erro ao buscar logs de voz do banco de dados:', error);
-    message.reply('Ocorreu um erro ao buscar os logs de voz.');
   }
 }
