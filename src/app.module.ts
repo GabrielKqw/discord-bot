@@ -4,6 +4,8 @@ import { ConfigModule } from '@nestjs/config';
 import { UsersModule } from './users/users.module';
 import { DiscordService } from './discord/discord.service';
 
+
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -20,6 +22,7 @@ import { DiscordService } from './discord/discord.service';
       synchronize: true, // Use apenas em desenvolvimento
     }),
     UsersModule,
+
   ],
   providers: [DiscordService],
 })

@@ -1,31 +1,40 @@
 import { Client, Message, EmbedBuilder, TextChannel } from 'discord.js';
+import { pool } from '../discord.service'; 
 
-const voiceLogs = new Map<string, string[]>();
 const userVoiceState = new Map<string, string | null>();
 
 export function setupVoiceLogs(client: Client) {
-  client.on('voiceStateUpdate', (oldState, newState) => {
+  client.on('voiceStateUpdate', async (oldState, newState) => {
     const userId = newState.member.user.id;
+    const timestamp = new Date();
 
-    if (!voiceLogs.has(userId)) {
-      voiceLogs.set(userId, []);
-    }
+    try {
+      if (!oldState.channel && newState.channel) {
+        // Salva o log no banco de dados
+        await pool.query(
+          'INSERT INTO voice_logs (user_id, timestamp, event, channel_id) VALUES ($1, $2, $3, $4)',
+          [userId, timestamp, 'entrou', newState.channel.id],
+        );
+        userVoiceState.set(userId, newState.channel.name);
+      }
 
-    const logs = voiceLogs.get(userId);
+      if (oldState.channel && !newState.channel) {
+        await pool.query(
+          'INSERT INTO voice_logs (user_id, timestamp, event, channel_id) VALUES ($1, $2, $3, $4)',
+          [userId, timestamp, 'saiu', oldState.channel.id],
+        );
+        userVoiceState.set(userId, null);
+      }
 
-    if (!oldState.channel && newState.channel) {
-      logs.push(`${new Date().toLocaleString()}: Entrou no canal <#${newState.channel.id}>`);
-      userVoiceState.set(userId, newState.channel.name);
-    }
-
-    if (oldState.channel && !newState.channel) {
-      logs.push(`${new Date().toLocaleString()}: Saiu do canal <#${oldState.channel.id}>`);
-      userVoiceState.set(userId, null);
-    }
-
-    if (oldState.channel && newState.channel && oldState.channel.id !== newState.channel.id) {
-      logs.push(`${new Date().toLocaleString()}: Mudou de <#${oldState.channel.id}> para <#${newState.channel.id}>`);
-      userVoiceState.set(userId, newState.channel.name);
+      if (oldState.channel && newState.channel && oldState.channel.id !== newState.channel.id) {
+        await pool.query(
+          'INSERT INTO voice_logs (user_id, timestamp, event, channel_id) VALUES ($1, $2, $3, $4)',
+          [userId, timestamp, 'mudou', newState.channel.id],
+        );
+        userVoiceState.set(userId, newState.channel.name);
+      }
+    } catch (error) {
+      console.error('Erro ao registrar log de voz no banco de dados:', error);
     }
   });
 }
@@ -38,49 +47,58 @@ export async function handleVoiceLogsCommand(message: Message) {
     return message.reply('Por favor, mencione um usuário ou forneça o ID.');
   }
 
-  const logs = voiceLogs.get(userId);
-  const currentChannel = userVoiceState.get(userId);
+  try {
+    const result = await pool.query('SELECT * FROM voice_logs WHERE user_id = $1 ORDER BY timestamp DESC', [userId]);
+    const logs = result.rows;
 
-  if (!logs || logs.length === 0) {
-    const emptyEmbed = new EmbedBuilder()
+    const currentChannel = userVoiceState.get(userId);
+
+    if (logs.length === 0) {
+      const emptyEmbed = new EmbedBuilder()
+        .setColor('#0099ff')
+        .setAuthor({
+          name: `Registro de voz - ${message.guild.members.cache.get(userId)?.user.tag || 'Usuário'}`,
+          iconURL: message.guild.members.cache.get(userId)?.user.displayAvatarURL(),
+        })
+        .setDescription('Nenhum registro de voz encontrado.');
+
+      if (message.channel instanceof TextChannel) {
+        message.channel.send({ embeds: [emptyEmbed] });
+      }
+      return;
+    }
+
+    const pageSize = 7;
+    let page = parseInt(args[1]) || 1;
+
+    const totalPages = Math.ceil(logs.length / pageSize);
+    if (page < 1) page = 1;
+    if (page > totalPages) page = totalPages;
+
+    const paginatedLogs = logs.slice((page - 1) * pageSize, page * pageSize);
+
+    const embed = new EmbedBuilder()
       .setColor('#0099ff')
       .setAuthor({
         name: `Registro de voz - ${message.guild.members.cache.get(userId)?.user.tag || 'Usuário'}`,
         iconURL: message.guild.members.cache.get(userId)?.user.displayAvatarURL(),
       })
-      .setDescription('Nenhum registro de voz encontrado.');
+      .setDescription(
+        paginatedLogs.map((log) => `- ${log.timestamp.toLocaleString()}: ${log.event} ${log.channel_id ? `<#${log.channel_id}>` : ''}`).join('\n'),
+      )
+      .setFooter({ text: `Página ${page} de ${totalPages}` });
+
+    if (currentChannel) {
+      embed.addFields([{ name: 'Informações de voz', value: `Conectado em: ${currentChannel}` }]);
+    } else {
+      embed.addFields([{ name: 'Informações de voz', value: 'Desconectado' }]);
+    }
 
     if (message.channel instanceof TextChannel) {
-      message.channel.send({ embeds: [emptyEmbed] });
+      message.channel.send({ embeds: [embed] });
     }
-    return;
-  }
-
-  const pageSize = 7;
-  let page = parseInt(args[1]) || 1;
-
-  const totalPages = Math.ceil(logs.length / pageSize);
-  if (page < 1) page = 1;
-  if (page > totalPages) page = totalPages;
-
-  const paginatedLogs = logs.slice((page - 1) * pageSize, page * pageSize);
-
-  const embed = new EmbedBuilder()
-    .setColor('#0099ff')
-    .setAuthor({
-      name: `Registro de voz - ${message.guild.members.cache.get(userId)?.user.tag || 'Usuário'}`,
-      iconURL: message.guild.members.cache.get(userId)?.user.displayAvatarURL(),
-    })
-    .setDescription(paginatedLogs.map((log) => `- ${log}`).join('\n'))
-    .setFooter({ text: `Página ${page} de ${totalPages}` });
-
-  if (currentChannel) {
-    embed.addFields([{ name: 'Informações de voz', value: `Conectado em: ${currentChannel}` }]);
-  } else {
-    embed.addFields([{ name: 'Informações de voz', value: 'Desconectado' }]);
-  }
-
-  if (message.channel instanceof TextChannel) {
-    message.channel.send({ embeds: [embed] });
+  } catch (error) {
+    console.error('Erro ao buscar logs de voz do banco de dados:', error);
+    message.reply('Ocorreu um erro ao buscar os logs de voz.');
   }
 }
