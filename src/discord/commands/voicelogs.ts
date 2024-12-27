@@ -1,7 +1,16 @@
-import { Client, Message, EmbedBuilder, TextChannel, PermissionsBitField } from 'discord.js';
+import {
+  Client,
+  Message,
+  EmbedBuilder,
+  TextChannel,
+  PermissionsBitField,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+} from 'discord.js';
 import { pool } from '../discord.service';
 
-const userVoiceState = new Map<string, string | null>();
+export const userVoiceState = new Map<string, string | null>();
 
 export function setupVoiceLogs(client: Client) {
   client.on('voiceStateUpdate', async (oldState, newState) => {
@@ -47,7 +56,7 @@ export async function handleVoiceLogsCommand(message: Message) {
   }
 
   if (!userId) {
-    userId = message.author.id; 
+    userId = message.author.id;
   }
 
   try {
@@ -81,24 +90,124 @@ export async function handleVoiceLogsCommand(message: Message) {
     const paginatedLogs = logs.slice((page - 1) * pageSize, page * pageSize);
 
     const embed = new EmbedBuilder()
-      .setColor('#0099ff')
-      .setAuthor({
-        name: `Registro de voz - ${message.guild.members.cache.get(userId)?.user.tag || 'Usuário'}`,
-        iconURL: message.guild.members.cache.get(userId)?.user.displayAvatarURL(),
+  .setColor('#0099ff')
+  .setAuthor({
+    name: `Registro de voz - ${message.guild.members.cache.get(userId)?.user.tag || 'Usuário'}`,
+    iconURL: message.guild.members.cache.get(userId)?.user.displayAvatarURL(),
+  })
+  .setDescription(
+    paginatedLogs
+      .map((log) => {
+        const icon =
+          log.event === 'entrou'
+            ? '<:entrou:1086070423856357487>'
+            : log.event === 'saiu'
+            ? '<:saiu:1086070427736092712>'
+            : '<:mudou:1086070425244663828>';
+        const channelMention = log.channel_id ? `<#${log.channel_id}>` : '';
+        return `**${icon} ${log.event === 'mudou' ? `Trocou para` : log.event === 'saiu' ? `Saiu de` : `Entrou em`}** ${channelMention} — *${new Date(
+          log.timestamp,
+        ).toLocaleString()}*`;
       })
-      .setDescription(
-        paginatedLogs.map((log) => `- ${log.timestamp.toLocaleString()}: ${log.event} ${log.channel_id ? `<#${log.channel_id}>` : ''}`).join('\n'),
-      )
-      .setFooter({ text: `Página ${page} de ${totalPages}` });
+      .join('\n'),
+  )
+  .addFields([
+    { name: 'Informações de voz', value: currentChannel ? `Conectado em: ${currentChannel}` : 'Desconectado' },
+  ])
+  .setFooter({ text: `Página ${page}/${totalPages} | Total de atividades: ${logs.length}` })
+  .setTimestamp();
 
-    if (currentChannel) {
-      embed.addFields([{ name: 'Informações de voz', value: `Conectado em: ${currentChannel}` }]);
-    } else {
-      embed.addFields([{ name: 'Informações de voz', value: 'Desconectado' }]);
-    }
+    const row = new ActionRowBuilder<ButtonBuilder>()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId('prev')
+          .setLabel('Anterior')
+          .setStyle(ButtonStyle.Primary)
+          .setDisabled(page === 1),
+        new ButtonBuilder()
+          .setCustomId('next')
+          .setLabel('Próxima')
+          .setStyle(ButtonStyle.Primary)
+          .setDisabled(page === totalPages),
+      );
 
     if (message.channel instanceof TextChannel) {
-      message.channel.send({ embeds: [embed] });
+      const reply = await message.channel.send({ embeds: [embed], components: [row] });
+
+      const collector = reply.createMessageComponentCollector({ time: 60000 });
+
+      collector.on('collect', async (interaction) => {
+        if (interaction.user.id !== message.author.id) {
+          return interaction.reply({ content: 'Você não pode usar esses botões.', ephemeral: true });
+        }
+
+        if (interaction.customId === 'prev') {
+          page--;
+        } else if (interaction.customId === 'next') {
+          page++;
+        }
+
+        const newEmbed = new EmbedBuilder()
+          .setColor('#0099ff')
+          .setAuthor({
+            name: `Registro de voz - ${message.guild.members.cache.get(userId)?.user.tag || 'Usuário'}`,
+            iconURL: message.guild.members.cache.get(userId)?.user.displayAvatarURL(),
+          })
+          .setDescription(
+            logs
+              .slice((page - 1) * pageSize, page * pageSize)
+              .map((log) => {
+                const icon =
+                log.event === 'entrou'
+            ? '<:entrou:1086070423856357487>'
+            : log.event === 'saiu'
+            ? '<:saiu:1086070427736092712>'
+            : '<:mudou:1086070425244663828>';
+        const channelMention = log.channel_id ? `<#${log.channel_id}>` : '';
+        return `**${icon} ${log.event === 'mudou' ? `Trocou para` : log.event === 'saiu' ? `Saiu de` : `Entrou em`}** ${channelMention} — *${new Date(
+          log.timestamp,
+        ).toLocaleString()}*`;
+      })
+              .join('\n'),
+          )
+          .setFooter({ text: `Página ${page}/${totalPages} | Total de atividades: ${logs.length}` })
+          .setTimestamp();
+
+        const newRow = new ActionRowBuilder<ButtonBuilder>()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId('prev')
+              .setLabel('Anterior')
+              .setStyle(ButtonStyle.Primary)
+              .setDisabled(page === 1),
+            new ButtonBuilder()
+              .setCustomId('next')
+              .setLabel('Próxima')
+              .setStyle(ButtonStyle.Primary)
+              .setDisabled(page === totalPages),
+          );
+
+        await interaction.update({ embeds: [newEmbed], components: [newRow] });
+      });
+
+      collector.on('end', async () => {
+        const finalEmbed = embed.setFooter({ text: 'Os botões expiraram.' });
+        const disabledRow = new ActionRowBuilder<ButtonBuilder>()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId('prev')
+              .setLabel('Anterior')
+              .setStyle(ButtonStyle.Primary)
+              .setDisabled(true),
+            new ButtonBuilder()
+              .setCustomId('next')
+              .setLabel('Próxima')
+              .setStyle(ButtonStyle.Primary)
+              .setDisabled(true),
+          );
+
+        await reply.edit({ embeds: [finalEmbed], components: [disabledRow] });
+      });
     }
   } catch (error) {
     console.error('Erro ao buscar logs de voz do banco de dados:', error);

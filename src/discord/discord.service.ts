@@ -5,6 +5,12 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { Client, GatewayIntentBits, Message } from 'discord.js';
 import { Pool } from 'pg';
 import { setupVoiceLogs, handleVoiceLogsCommand } from './commands/voicelogs';
+import { handleMuteCommand } from './commands/mute';
+import { handleUnmuteCommand } from './commands/unmute'; 
+import { handleUserInfoCommand } from './commands/userinfo';
+import { handleBanCommand, handleUnbanCommand } from './commands/ban';
+import { handleModLogsCommand } from './commands/modlogs';
+import { handleWarnCommand } from './commands/warn';
 
 if (typeof process.env.DATABASE_PASSWORD !== 'string') {
   console.error('A senha do banco de dados não é uma string válida');
@@ -69,6 +75,32 @@ export class DiscordService implements OnModuleInit {
     if (message.content.startsWith('!voicelogs')) {
       handleVoiceLogsCommand(message);
     }
+
+    if (message.content.startsWith('!mute')) {
+      handleMuteCommand(message);
+    }
+    if (message.content.startsWith('!userinfo')) {
+      handleUserInfoCommand(message);
+    }
+  
+    if (message.content.startsWith('!unmute')) {
+      handleUnmuteCommand(message);
+    }
+    if (message.content.startsWith('!ban')) {
+      handleBanCommand(message);
+    }
+  
+    if (message.content.startsWith('!unban')) {
+      handleUnbanCommand(message);
+    }
+
+    
+  if (message.content.startsWith('!modlogs')) {
+    handleModLogsCommand(message);
+  }
+  if (message.content.startsWith('&warn')) {
+    handleWarnCommand(message); // Chama o handleWarnCommand para o comando !warn
+  }
   }
 }
 
