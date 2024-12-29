@@ -11,6 +11,7 @@ import { handleUserInfoCommand } from './commands/userinfo';
 import { handleBanCommand, handleUnbanCommand } from './commands/ban';
 import { handleModLogsCommand } from './commands/modlogs';
 import { handleWarnCommand } from './commands/warn';
+import { handleKickCommand } from './commands/kick';
 
 if (typeof process.env.DATABASE_PASSWORD !== 'string') {
   console.error('A senha do banco de dados não é uma string válida');
@@ -93,13 +94,15 @@ export class DiscordService implements OnModuleInit {
     if (message.content.startsWith('!unban')) {
       handleUnbanCommand(message);
     }
-
+    if (message.content.startsWith('!kick')) {
+      handleKickCommand(message);
+    }
     
   if (message.content.startsWith('!modlogs')) {
     handleModLogsCommand(message);
   }
-  if (message.content.startsWith('&warn')) {
-    handleWarnCommand(message); // Chama o handleWarnCommand para o comando !warn
+  if (message.content.startsWith('!warn')) {
+    handleWarnCommand(message); 
   }
   }
 }

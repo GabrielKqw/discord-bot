@@ -4,7 +4,6 @@ import { pool } from '../discord.service';
 export async function handleUnmuteCommand(message: Message) {
   const args = message.content.split(' ').slice(1);
 
-
   if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
     return;
   }
@@ -16,15 +15,22 @@ export async function handleUnmuteCommand(message: Message) {
     return message.reply('Uso incorreto do comando. Use: `!unmute <id ou menção> <motivo>`');
   }
 
-  const member = message.guild.members.cache.get(userId);
-
-  if (!member) {
-    return message.reply('Usuário não encontrado.');
-  }
-
   try {
+    const member = await message.guild.members.fetch(userId);
+
+    if (!member.communicationDisabledUntil) {
+      const embed = new EmbedBuilder()
+        .setColor('#ff0000')
+        .setTitle('Erro')
+        .setDescription(`O usuário <@${userId}> não está mutado.`);
+      return message.reply({ embeds: [embed] });
+    }
 
     await member.timeout(null, reason);
+
+  
+    await pool.query('DELETE FROM mutes WHERE user_id = $1', [userId]);
+
 
     await pool.query(
       'INSERT INTO punishments (user_id, moderator_id, type, reason) VALUES ($1, $2, $3, $4)',
@@ -32,7 +38,7 @@ export async function handleUnmuteCommand(message: Message) {
     );
 
     const unmuteEmbed = new EmbedBuilder()
-      .setColor('#00ff00') 
+      .setColor('#00ff00')
       .setTitle('Usuário desmutado')
       .setDescription(`**Usuário:** ${member.user.tag}\n**Motivo:** ${reason}`)
       .setTimestamp();
@@ -42,6 +48,10 @@ export async function handleUnmuteCommand(message: Message) {
     }
   } catch (error) {
     console.error('Erro ao desmutar o usuário:', error);
-    message.reply('Ocorreu um erro ao desmutar o usuário.');
+    const embed = new EmbedBuilder()
+      .setColor('#ff0000')
+      .setTitle('Erro')
+      .setDescription('Ocorreu um erro ao desmutar o usuário.');
+    message.reply({ embeds: [embed] });
   }
 }
